@@ -19,13 +19,13 @@ Trade up generation should be based on buy orders, not sell orders -> special ci
 
 import os
 import pathlib
-from src import db_handler, market_handler, tradeup_generator, resource_collector
+import db_handler, market_handler, tradeup_generator, resource_collector
 
 WORKING_PATH = pathlib.Path(os.curdir)
 THREAD_COUNT = 64
 
-COLLECT_SKIN_DATA = False
-COLLECT_PRICE_DATA = False
+COLLECT_SKIN_DATA = True
+COLLECT_PRICE_DATA = True
 GENERATE_TRADE_UPS = True
 
 
@@ -43,16 +43,16 @@ def main():
     else:
         steam_creds = ("", "")
 
-    if os.path.exists(os.path.join(WORKING_PATH.absolute(), "data/.db-creds")):
-        with open(os.path.join(WORKING_PATH.absolute(), "data/.db-creds"), "r") as f:
-            db_creds = tuple(f.readlines())
+    if os.path.exists(os.path.join(WORKING_PATH.absolute(), "data/.db-path")):
+        with open(os.path.join(WORKING_PATH.absolute(), "data/.db-path"), "r") as f:
+            db_path = f.readline().strip()
             f.close()
     else:
-        db_creds = ("", "", "", "", "")
+        db_path = os.path.join(WORKING_PATH.absolute(), "data/cs_tradeup.db")
 
     # establish connection to database
     print("Establishing connection to database...")
-    db_handler.establish_db(db_creds,
+    db_handler.establish_db(db_path,
                             wipe_skin_data=COLLECT_SKIN_DATA,
                             wipe_price_data=COLLECT_PRICE_DATA,
                             wipe_trade_up_data=GENERATE_TRADE_UPS
@@ -83,7 +83,7 @@ def main():
     if GENERATE_TRADE_UPS:
         # generate all possible trade-ups
         print("Generating trade-ups...")
-        tradeup_generator.start_generator_threads(db_creds, THREAD_COUNT)
+        tradeup_generator.start_generator_threads(db_path, THREAD_COUNT)
 
     # close out working database
     db_handler.WORKING_DB.close()

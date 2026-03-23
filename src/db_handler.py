@@ -7,41 +7,46 @@ src/db-handler.py
 Developed by Keagan Bowman
 Copyright 2024
 
-Database operation handler for requests. Uses postgreSQL.
+Database operation handler for requests. Uses SQLite.
 
 """
 
 import json
-import psycopg2
-from src.models.skin import Skin
-from src.models.crate import Crate
-from src.models.tradeup import TradeUp
+import sqlite3
+from models.skin import Skin
+from models.crate import Crate
+from models.tradeup import TradeUp
 
 WORKING_DB = None
 
 
-def establish_db(creds, wipe_skin_data=False, wipe_price_data=False, wipe_trade_up_data=False):
+def establish_db(db_path, wipe_skin_data=False, wipe_price_data=False, wipe_trade_up_data=False):
     global WORKING_DB
 
-    db = connect_to_db(creds)
+    db = connect_to_db(db_path)
 
     WORKING_DB = db
 
     cursor = db.cursor()
 
-    if wipe_skin_data:
-        cursor.execute("DROP TABLE IF EXISTS crates CASCADE")
-        cursor.execute("DROP TABLE IF EXISTS skins CASCADE")
-    if wipe_price_data:
-        cursor.execute("DROP TABLE IF EXISTS cheapest CASCADE")
-        cursor.execute("DROP TABLE IF EXISTS prices CASCADE")
+    # Drop tables in dependency order (children before parents)
     if wipe_trade_up_data:
-        cursor.execute("DROP TABLE IF EXISTS tradeups CASCADE")
-        cursor.execute("DROP TABLE IF EXISTS tradeup_skins CASCADE")
+        cursor.execute("DROP TABLE IF EXISTS tradeup_skins")
+        cursor.execute("DROP TABLE IF EXISTS tradeups")
+    if wipe_price_data:
+        cursor.execute("DROP TABLE IF EXISTS cheapest")
+        cursor.execute("DROP TABLE IF EXISTS prices")
+    if wipe_skin_data:
+        cursor.execute("DROP TABLE IF EXISTS tradeup_skins")
+        cursor.execute("DROP TABLE IF EXISTS tradeups")
+        cursor.execute("DROP TABLE IF EXISTS cheapest")
+        cursor.execute("DROP TABLE IF EXISTS prices")
+        cursor.execute("DROP TABLE IF EXISTS skins")
+        cursor.execute("DROP TABLE IF EXISTS crates")
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS crates (
-        internal_id SERIAL PRIMARY KEY,
+        internal_id INTEGER PRIMARY KEY AUTOINCREMENT,
         crate_id TEXT,
         crate_name TEXT,
         set_id TEXT,
@@ -56,7 +61,7 @@ def establish_db(creds, wipe_skin_data=False, wipe_price_data=False, wipe_trade_
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS skins (
-        internal_id SERIAL PRIMARY KEY,
+        internal_id INTEGER PRIMARY KEY AUTOINCREMENT,
         skin_id TEXT UNIQUE,
         skin_tag TEXT,
         skin_name TEXT,
@@ -70,7 +75,7 @@ def establish_db(creds, wipe_skin_data=False, wipe_price_data=False, wipe_trade_
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS tradeups (
-        internal_id SERIAL PRIMARY KEY,
+        internal_id INTEGER PRIMARY KEY AUTOINCREMENT,
         goal_skin INTEGER,
         goal_wear INTEGER,
         goal_rarity INTEGER,
@@ -81,7 +86,7 @@ def establish_db(creds, wipe_skin_data=False, wipe_price_data=False, wipe_trade_
         profit_10 FLOAT,
         roi_100 FLOAT,
         profit_100 FLOAT,
-        price_warning BOOLEAN,
+        price_warning INTEGER,
         skin_1_price FLOAT,
         skin_2_price FLOAT,
         skin_1_max_wear FLOAT,
@@ -104,7 +109,7 @@ def establish_db(creds, wipe_skin_data=False, wipe_price_data=False, wipe_trade_
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS cheapest (
-        internal_id SERIAL PRIMARY KEY,
+        internal_id INTEGER PRIMARY KEY AUTOINCREMENT,
         crate_id INTEGER,
         skin_id INTEGER,
         rarity INTEGER,
@@ -117,7 +122,7 @@ def establish_db(creds, wipe_skin_data=False, wipe_price_data=False, wipe_trade_
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS prices (
-        internal_id SERIAL PRIMARY KEY,
+        internal_id INTEGER PRIMARY KEY AUTOINCREMENT,
         skin_id INTEGER,
         wear_rating INTEGER,
         market_id INTEGER,
@@ -134,22 +139,15 @@ def establish_db(creds, wipe_skin_data=False, wipe_price_data=False, wipe_trade_
     return db
 
 
-def connect_to_db(creds):
-    db = psycopg2.connect(
-        database=creds[0].strip(),
-        host=creds[1].strip(),
-        port=creds[2].strip(),
-        user=creds[3].strip(),
-        password=creds[4].strip()
-    )
-
+def connect_to_db(db_path):
+    db = sqlite3.connect(db_path)
     return db
 
 
 def add_crate(crate_id, crate_name, set_id, loot_table_id, commit=False):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute(f"INSERT INTO crates (crate_name, crate_id, set_id, loot_table_id) VALUES (%s, %s, %s, %s);",
+    cursor.execute("INSERT INTO crates (crate_name, crate_id, set_id, loot_table_id) VALUES (?, ?, ?, ?);",
                    (crate_name, crate_id, set_id, loot_table_id))
 
     cursor.close()
@@ -163,7 +161,7 @@ def update_crate_counts(crate_id: int, rarity_0: int, rarity_1: int, rarity_2: i
     cursor = WORKING_DB.cursor()
 
     cursor.execute(
-        "UPDATE crates SET rarity_0_count = %s, rarity_1_count = %s, rarity_2_count = %s, rarity_3_count = %s, rarity_4_count = %s, rarity_5_count = %s WHERE internal_id = %s",
+        "UPDATE crates SET rarity_0_count = ?, rarity_1_count = ?, rarity_2_count = ?, rarity_3_count = ?, rarity_4_count = ?, rarity_5_count = ? WHERE internal_id = ?",
         (rarity_0, rarity_1, rarity_2, rarity_3, rarity_4, rarity_5, crate_id))
 
     cursor.close()
@@ -175,7 +173,7 @@ def update_crate_counts(crate_id: int, rarity_0: int, rarity_1: int, rarity_2: i
 def get_crate_from_internal(internal_id: int):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("SELECT * FROM crates WHERE internal_id = %s;", (internal_id,))
+    cursor.execute("SELECT * FROM crates WHERE internal_id = ?;", (internal_id,))
     crate = cursor.fetchone()
 
     cursor.close()
@@ -189,7 +187,7 @@ def get_crate_from_internal(internal_id: int):
 def get_crate_from_set(set_id: str):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("SELECT * FROM crates WHERE set_id = %s;", (set_id,))
+    cursor.execute("SELECT * FROM crates WHERE set_id = ?;", (set_id,))
     crate = cursor.fetchone()
 
     cursor.close()
@@ -224,7 +222,7 @@ def add_skin(skin_id: str, skin_tag: str, skin_name: str, weapon_type: int, rari
     cursor = WORKING_DB.cursor()
 
     cursor.execute(
-        "INSERT INTO skins(skin_id, skin_tag, skin_name, weapon_type, rarity, min_wear, max_wear, crate_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        "INSERT INTO skins(skin_id, skin_tag, skin_name, weapon_type, rarity, min_wear, max_wear, crate_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (skin_id, skin_tag, skin_name, weapon_type, rarity, min_wear, max_wear, crate_id))
 
     cursor.close()
@@ -236,7 +234,7 @@ def add_skin(skin_id: str, skin_tag: str, skin_name: str, weapon_type: int, rari
 def update_skin_rarity(skin_id: str, rarity: int, commit: bool = False):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("UPDATE skins SET rarity = %s WHERE skin_id = %s", (rarity, skin_id))
+    cursor.execute("UPDATE skins SET rarity = ? WHERE skin_id = ?", (rarity, skin_id))
 
     cursor.close()
 
@@ -265,7 +263,7 @@ def get_skins_by_rarity(rarity: int, db=None):
 
     cursor = db.cursor()
 
-    cursor.execute("SELECT * FROM skins WHERE rarity = %s", (rarity,))
+    cursor.execute("SELECT * FROM skins WHERE rarity = ?", (rarity,))
 
     data = cursor.fetchall()
 
@@ -281,7 +279,7 @@ def get_skins_by_rarity(rarity: int, db=None):
 def get_skin_by_name(name: str):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("SELECT * FROM skins WHERE skin_name = %s", (name,))
+    cursor.execute("SELECT * FROM skins WHERE skin_name = ?", (name,))
 
     data = cursor.fetchone()
 
@@ -297,7 +295,7 @@ def get_skins_by_search_name(search_name: str, weapon_type: int = None) -> list[
     cursor = WORKING_DB.cursor()
 
     if weapon_type is not None:
-        cursor.execute("SELECT skin_name FROM skins WHERE weapon_type = %s", (weapon_type,))
+        cursor.execute("SELECT skin_name FROM skins WHERE weapon_type = ?", (weapon_type,))
         data = cursor.fetchall()
     else:
         cursor.execute("SELECT skin_name FROM skins")
@@ -316,7 +314,7 @@ def get_skins_by_search_name(search_name: str, weapon_type: int = None) -> list[
 def get_skins_by_crate(internal_id: int):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("SELECT * FROM skins WHERE crate_id = %s", (internal_id,))
+    cursor.execute("SELECT * FROM skins WHERE crate_id = ?", (internal_id,))
     data = cursor.fetchall()
 
     cursor.close()
@@ -334,7 +332,7 @@ def get_skins_by_crate_and_rarity(crate_id: int, rarity: int, db=None):
 
     cursor = db.cursor()
 
-    cursor.execute("SELECT * FROM skins WHERE crate_id = %s AND rarity = %s", (crate_id, rarity,))
+    cursor.execute("SELECT * FROM skins WHERE crate_id = ? AND rarity = ?", (crate_id, rarity,))
     data = cursor.fetchall()
 
     cursor.close()
@@ -349,7 +347,7 @@ def get_skins_by_crate_and_rarity(crate_id: int, rarity: int, db=None):
 def get_skin_prices_by_crate_rarity_and_wear(crate_id: int, rarity: int, wear: int):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("SELECT internal_id FROM skins WHERE crate_id = %s AND rarity = %s",
+    cursor.execute("SELECT internal_id FROM skins WHERE crate_id = ? AND rarity = ?",
                    (crate_id, rarity))
     data = cursor.fetchall()
 
@@ -372,7 +370,7 @@ def get_skin_prices_by_crate_rarity_and_wear(crate_id: int, rarity: int, wear: i
 def get_skin_by_id(internal_id: int):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("SELECT * FROM skins WHERE internal_id = %s", (internal_id,))
+    cursor.execute("SELECT * FROM skins WHERE internal_id = ?", (internal_id,))
     data = cursor.fetchone()
 
     cursor.close()
@@ -388,7 +386,7 @@ def get_prices(skin_id: int, wear: int, db=None):
         db = WORKING_DB
     cursor = db.cursor()
 
-    cursor.execute("SELECT price_data FROM prices WHERE skin_id = %s AND wear_rating = %s",
+    cursor.execute("SELECT price_data FROM prices WHERE skin_id = ? AND wear_rating = ?",
                    (skin_id, wear))
     data = cursor.fetchone()
 
@@ -408,7 +406,7 @@ def get_prices(skin_id: int, wear: int, db=None):
 def get_buy_orders(skin_id: int, wear: int):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("SELECT buy_data FROM prices WHERE skin_id = %s AND wear_rating = %s",
+    cursor.execute("SELECT buy_data FROM prices WHERE skin_id = ? AND wear_rating = ?",
                    (skin_id, wear))
     data = cursor.fetchone()
 
@@ -428,7 +426,7 @@ def get_buy_orders(skin_id: int, wear: int):
 def get_market_hash(skin_id: float, wear: int):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("SELECT market_id FROM prices WHERE skin_id = %s AND wear_rating = %s", (skin_id, wear))
+    cursor.execute("SELECT market_id FROM prices WHERE skin_id = ? AND wear_rating = ?", (skin_id, wear))
 
     id = cursor.fetchone()
 
@@ -443,8 +441,20 @@ def get_market_hash(skin_id: float, wear: int):
 def update_price(market_hash: int, sell_orders: str, buy_orders: str, commit: bool=False):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("UPDATE prices SET price_data=%s, buy_data=%s WHERE market_id = %s",
+    cursor.execute("UPDATE prices SET price_data=?, buy_data=? WHERE market_id = ?",
                    (sell_orders, buy_orders, market_hash))
+
+    cursor.close()
+
+    if commit:
+        WORKING_DB.commit()
+
+
+def update_price_by_skin(skin_id: int, wear: int, sell_orders: str, buy_orders: str, commit: bool = False):
+    cursor = WORKING_DB.cursor()
+
+    cursor.execute("UPDATE prices SET price_data=?, buy_data=? WHERE skin_id = ? AND wear_rating = ?",
+                   (sell_orders, buy_orders, skin_id, wear))
 
     cursor.close()
 
@@ -465,16 +475,16 @@ def add_tradeup(skin_ids: list[int], goal_skin: int, goal_wear: int, goal_rarity
     cursor = db.cursor()
 
     cursor.execute(
-        "INSERT INTO tradeups (goal_skin, goal_wear, goal_rarity, goal_weapon, skin_1_count, chance, roi_10, roi_100, profit_10, profit_100, price_warning, skin_1_price, skin_2_price, skin_1_max_wear, skin_2_max_wear, skin_1_margin, skin_2_margin, input_price) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING internal_id",
+        "INSERT INTO tradeups (goal_skin, goal_wear, goal_rarity, goal_weapon, skin_1_count, chance, roi_10, roi_100, profit_10, profit_100, price_warning, skin_1_price, skin_2_price, skin_1_max_wear, skin_2_max_wear, skin_1_margin, skin_2_margin, input_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             goal_skin, goal_wear, goal_rarity, goal_weapon, skin_1_count, chance, roi_10, roi_100, profit_10,
             profit_100, price_warning, skin_1_price, skin_2_price, skin_1_max_wear, skin_2_max_wear, skin_1_margin,
             skin_2_margin, input_price))
 
-    tradeup_id = cursor.fetchone()[0]
+    tradeup_id = cursor.lastrowid
 
     for skin in skin_ids:
-        cursor.execute("INSERT INTO tradeup_skins (tradeup_id, skin_id) VALUES (%s, %s)", (tradeup_id, skin))
+        cursor.execute("INSERT INTO tradeup_skins (tradeup_id, skin_id) VALUES (?, ?)", (tradeup_id, skin))
 
     cursor.close()
 
@@ -486,7 +496,7 @@ def add_price(skin_id: int, wear: int, market_id: int, sell_data: str, buy_data:
     cursor = WORKING_DB.cursor()
 
     cursor.execute(
-        "INSERT INTO prices (skin_id, wear_rating, market_id, price_data, buy_data) VALUES (%s, %s, %s, %s, %s)",
+        "INSERT INTO prices (skin_id, wear_rating, market_id, price_data, buy_data) VALUES (?, ?, ?, ?, ?)",
         (skin_id, wear, market_id, sell_data, buy_data))
 
     cursor.close()
@@ -498,7 +508,7 @@ def add_price(skin_id: int, wear: int, market_id: int, sell_data: str, buy_data:
 def add_cheapest(crate_id: int, skin_id: int, rarity: int, wear: int, price: float, commit: bool = False):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("INSERT INTO cheapest (crate_id, skin_id, rarity, wear, price) VALUES (%s, %s, %s, %s, %s)",
+    cursor.execute("INSERT INTO cheapest (crate_id, skin_id, rarity, wear, price) VALUES (?, ?, ?, ?, ?)",
                    (crate_id, skin_id, rarity, wear, price))
 
     cursor.close()
@@ -513,7 +523,7 @@ def get_cheapest_by_crate_rarity_and_wear(crate_id: int, rarity: int, wear: int,
 
     cursor = db.cursor()
 
-    cursor.execute("SELECT skin_id, price FROM cheapest WHERE crate_id = %s AND rarity = %s AND wear = %s",
+    cursor.execute("SELECT skin_id, price FROM cheapest WHERE crate_id = ? AND rarity = ? AND wear = ?",
                    (crate_id, rarity, wear))
     data = cursor.fetchone()
 
@@ -526,28 +536,28 @@ async def get_tradeups_by_criteria(rarity: int, wear: int, weapon: int, skin_nam
                                    max_wear: float, lower_bound: float, upper_bound: float, lower_roi: float,
                                    upper_roi: float, max_margin: float, offset: int, sort_by: str):
     criteria = [
-        "((%s <= skin_1_max_wear AND %s >= skin_1_max_wear) AND (%s <= skin_2_max_wear AND %s >= skin_2_max_wear))",
-        "input_price >= %s AND input_price <= %s", "%s <= roi_10 AND %s >= roi_10",
-        "(%s <= skin_1_margin AND %s <= skin_2_margin)"
+        "((? <= skin_1_max_wear AND ? >= skin_1_max_wear) AND (? <= skin_2_max_wear AND ? >= skin_2_max_wear))",
+        "input_price >= ? AND input_price <= ?", "? <= roi_10 AND ? >= roi_10",
+        "(? <= skin_1_margin AND ? <= skin_2_margin)"
     ]
     values = [min_wear, max_wear, min_wear, max_wear, lower_bound, upper_bound, lower_roi, upper_roi, max_margin,
               max_margin]
 
     if rarity is not None:
-        criteria.append("goal_rarity = %s")
+        criteria.append("goal_rarity = ?")
         values.append(rarity)
 
     if wear is not None:
-        criteria.append("goal_wear = %s")
+        criteria.append("goal_wear = ?")
         values.append(wear)
 
     if weapon is not None:
-        criteria.append("goal_weapon = %s")
+        criteria.append("goal_weapon = ?")
         values.append(weapon)
 
     if skin_name is not None:
         skin_id = get_skin_by_name(skin_name).internal_id
-        criteria.append("goal_skin = %s")
+        criteria.append("goal_skin = ?")
         values.append(skin_id)
 
     if len(criteria) == 0:
@@ -562,7 +572,7 @@ async def get_tradeups_by_criteria(rarity: int, wear: int, weapon: int, skin_nam
     cursor = WORKING_DB.cursor()
 
     cursor.execute(
-        f"SELECT internal_id FROM tradeups WHERE {criteria_str} ORDER BY {sort_by} DESC LIMIT 10 OFFSET %s",
+        f"SELECT internal_id FROM tradeups WHERE {criteria_str} ORDER BY {sort_by} DESC LIMIT 10 OFFSET ?",
         values)
     data = cursor.fetchall()
 
@@ -583,7 +593,7 @@ async def get_tradeups_by_criteria(rarity: int, wear: int, weapon: int, skin_nam
 def get_tradeup_by_id(tradeup_id):
     cursor = WORKING_DB.cursor()
 
-    cursor.execute("SELECT * FROM tradeups WHERE internal_id = %s", (tradeup_id,))
+    cursor.execute("SELECT * FROM tradeups WHERE internal_id = ?", (tradeup_id,))
     data = cursor.fetchone()
 
     if data is None:
@@ -592,7 +602,7 @@ def get_tradeup_by_id(tradeup_id):
 
     data = list(data)
 
-    cursor.execute("SELECT * FROM skins WHERE internal_id = %s", (data[1],))
+    cursor.execute("SELECT * FROM skins WHERE internal_id = ?", (data[1],))
     goal_skin_data = cursor.fetchone()
 
     if goal_skin_data is None:
@@ -601,7 +611,7 @@ def get_tradeup_by_id(tradeup_id):
 
     data[1] = Skin(goal_skin_data)
 
-    cursor.execute("SELECT skin_id FROM tradeup_skins WHERE tradeup_id = %s", (tradeup_id,))
+    cursor.execute("SELECT skin_id FROM tradeup_skins WHERE tradeup_id = ?", (tradeup_id,))
     skin_ids = cursor.fetchall()
 
     if skin_ids is None:
@@ -610,7 +620,7 @@ def get_tradeup_by_id(tradeup_id):
 
     skin_data = []
     for skin_id in skin_ids:
-        cursor.execute("SELECT * FROM skins WHERE internal_id = %s", (skin_id[0],))
+        cursor.execute("SELECT * FROM skins WHERE internal_id = ?", (skin_id[0],))
         skin_data.append(cursor.fetchone())
 
     cursor.close()

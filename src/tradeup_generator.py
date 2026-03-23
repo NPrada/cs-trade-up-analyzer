@@ -13,10 +13,10 @@ Generator algorithms for determining best possible trade ups for a given skin
 
 import random
 import threading
-from src import db_handler
-from src.models.skin import Skin
-from src.models.weapon_classifiers import get_valid_wears, get_wear_margin
-from src.models.simulation_possibility import SimulationPossibility
+import db_handler
+from models.skin import Skin
+from models.weapon_classifiers import get_valid_wears, get_wear_margin
+from models.simulation_possibility import SimulationPossibility
 
 
 def start_generator_threads(db_creds, thread_count):

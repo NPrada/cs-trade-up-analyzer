@@ -11,7 +11,7 @@ Simulation Possibility class for running simulated trade ups
 
 """
 
-from src.models.skin import Skin
+from models.skin import Skin
 
 
 class SimulationPossibility:
